@@ -1,0 +1,87 @@
+[
+  {
+    "fact_type": "employee_count",
+    "display_name": "Employee count",
+    "description": "Current benefits-eligible employee count.",
+    "value_kind": "integer",
+    "value_schema": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "extractor_name": "deterministic_rules",
+    "extractor_version": "2026-08-13.1",
+    "active": true
+  },
+  {
+    "fact_type": "benefit_cycle_start_date",
+    "display_name": "Benefit cycle start date",
+    "description": "Current benefit cycle start date in ISO date format.",
+    "value_kind": "date",
+    "value_schema": {
+      "type": "string",
+      "format": "date"
+    },
+    "extractor_name": "deterministic_rules",
+    "extractor_version": "2026-08-13.1",
+    "active": true
+  },
+  {
+    "fact_type": "preferred_plan_type",
+    "display_name": "Preferred plan type",
+    "description": "Client's preferred plan type, such as HMO, PPO, or HDHP.",
+    "value_kind": "enum",
+    "value_schema": {
+      "type": "string",
+      "enum": [
+        "HMO",
+        "PPO",
+        "HDHP"
+      ]
+    },
+    "extractor_name": "deterministic_rules",
+    "extractor_version": "2026-08-13.1",
+    "active": true
+  },
+  {
+    "fact_type": "employer_budget_pepm",
+    "display_name": "Employer budget per employee per month",
+    "description": "Employer budget in dollars per employee per month.",
+    "value_kind": "currency_pepm",
+    "value_schema": {
+      "type": "integer",
+      "minimum": 0,
+      "currency": "USD"
+    },
+    "extractor_name": "deterministic_rules",
+    "extractor_version": "2026-08-13.1",
+    "active": true
+  },
+  {
+    "fact_type": "incumbent_plan_pricing",
+    "display_name": "Incumbent plan pricing",
+    "description": "Plans and per-employee monthly pricing found by the incumbent broker.",
+    "value_kind": "array<object>",
+    "value_schema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "plan_name",
+          "price_pepm"
+        ],
+        "properties": {
+          "plan_name": {
+            "type": "string"
+          },
+          "price_pepm": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "extractor_name": "deterministic_rules",
+    "extractor_version": "2026-08-13.1",
+    "active": true
+  }
+]

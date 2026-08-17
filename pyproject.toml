@@ -1,0 +1,25 @@
+[project]
+name = "corridor-context-takehome"
+version = "0.1.0"
+description = "Client context ingestion system for Corridor takehome"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "python-dotenv>=1.2.1",
+]
+
+[project.scripts]
+corridor-ingest = "corridor_context.ingest:main"
+corridor-mcp = "corridor_context.mcp_server:main"
+corridor-context = "corridor_context.context_cli:main"
+corridor-extract = "corridor_context.extract_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/corridor_context"]
