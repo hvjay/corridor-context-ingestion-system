@@ -90,3 +90,7 @@ Correctness - extracting the right facts about the right client, and maintaining
 We will also evaluate the MCP tool design, successful integration with Claude or ChatGPT, and how clearly the demo video establishes that the agent retrieves and uses fresh context over time within the same thread.
 
 Some parts of the system are intentionally open-ended. You may make reasonable assumptions about ambiguous requirements, but should be prepared to explain those assumptions and the tradeoffs behind them.
+
+## Demo Video
+
+The MCP freshness demo recording is submitted separately as `corridor-context-ingestion-system-demo.mov`.
