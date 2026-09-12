@@ -7,7 +7,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 
-from .facts import load_fact_definitions, normalize_client_key
+from .attribution import resolve_target, validate_fact
+from .facts import load_fact_definitions
 from .types import ExtractedFact, FactDefinition
 
 DEFAULT_DB_PATH = Path("data/client_context.sqlite3")
@@ -85,6 +86,66 @@ def init_db(conn: sqlite3.Connection, fact_config_path: Optional[Path] = None) -
           attempted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS attribution_reviews (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ingestion_run_id INTEGER NOT NULL REFERENCES ingestion_runs(id),
+          meeting_id TEXT NOT NULL REFERENCES meetings(id),
+          target_client_key TEXT NOT NULL,
+          segment_index INTEGER NOT NULL,
+          source_excerpt TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          policy_version TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS review_fact_candidates (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          review_id INTEGER NOT NULL REFERENCES attribution_reviews(id),
+          ordinal INTEGER NOT NULL,
+          fact_type TEXT NOT NULL,
+          label TEXT NOT NULL,
+          value_json TEXT NOT NULL,
+          display_value TEXT NOT NULL,
+          source_excerpt TEXT NOT NULL,
+          extractor_version TEXT NOT NULL,
+          UNIQUE(review_id, ordinal)
+        );
+
+        CREATE TABLE IF NOT EXISTS review_suggestions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          review_id INTEGER NOT NULL REFERENCES attribution_reviews(id),
+          suggestion_json TEXT NOT NULL,
+          baseline_json TEXT NOT NULL,
+          model TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS review_suggestions_review ON review_suggestions(review_id, id);
+        CREATE TABLE IF NOT EXISTS correction_proposals (
+          id TEXT PRIMARY KEY,
+          request_id TEXT NOT NULL UNIQUE,
+          review_id INTEGER NOT NULL REFERENCES attribution_reviews(id),
+          target_client_key TEXT NOT NULL,
+          instruction TEXT NOT NULL,
+          reviewer TEXT NOT NULL,
+          plan_json TEXT NOT NULL,
+          baseline_json TEXT NOT NULL,
+          model TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS review_resolutions (
+          id TEXT PRIMARY KEY,
+          request_id TEXT NOT NULL UNIQUE,
+          review_id INTEGER NOT NULL UNIQUE REFERENCES attribution_reviews(id),
+          proposal_id TEXT REFERENCES correction_proposals(id),
+          target_client_key TEXT NOT NULL,
+          action TEXT NOT NULL CHECK(action IN ('updated', 'ignored')),
+          instruction TEXT NOT NULL,
+          reviewer TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          before_json TEXT NOT NULL,
+          after_json TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         CREATE TABLE IF NOT EXISTS fact_definitions (
           fact_type TEXT PRIMARY KEY,
           display_name TEXT NOT NULL,
@@ -167,6 +228,19 @@ def init_db(conn: sqlite3.Connection, fact_config_path: Optional[Path] = None) -
 
 
 def _migrate_existing_schema(conn: sqlite3.Connection) -> None:
+    if "payload_json" not in _table_columns(conn, "meetings"):
+        conn.execute("ALTER TABLE meetings ADD COLUMN payload_json TEXT")
+    if "attribution_json" not in _table_columns(conn, "meetings"):
+        conn.execute("ALTER TABLE meetings ADD COLUMN attribution_json TEXT")
+    if "subject_client_key" not in _table_columns(conn, "review_fact_candidates"):
+        conn.execute("ALTER TABLE review_fact_candidates ADD COLUMN subject_client_key TEXT")
+    review_columns = _table_columns(conn, "attribution_reviews")
+    for column in ("review_key", "snapshot_json", "target_name", "candidate_version"):
+        if column not in review_columns:
+            conn.execute(f"ALTER TABLE attribution_reviews ADD COLUMN {column} TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS attribution_review_key ON attribution_reviews(review_key) WHERE review_key IS NOT NULL")
+    if "review_resolution_id" not in _table_columns(conn, "fact_versions"):
+        conn.execute("ALTER TABLE fact_versions ADD COLUMN review_resolution_id TEXT REFERENCES review_resolutions(id)")
     fact_definition_columns = _table_columns(conn, "fact_definitions")
     if "current_version_id" not in fact_definition_columns:
         conn.execute("ALTER TABLE fact_definitions ADD COLUMN current_version_id INTEGER")
@@ -352,8 +426,7 @@ def get_active_fact_definitions(conn: sqlite3.Connection):
     ]
 
 
-def upsert_client(conn: sqlite3.Connection, display_name: str) -> int:
-    client_key = normalize_client_key(display_name)
+def upsert_client(conn: sqlite3.Connection, display_name: str, client_key: str) -> int:
     conn.execute(
         """
         INSERT INTO clients (client_key, display_name)
@@ -365,7 +438,7 @@ def upsert_client(conn: sqlite3.Connection, display_name: str) -> int:
     return int(conn.execute("SELECT id FROM clients WHERE client_key = ?", (client_key,)).fetchone()["id"])
 
 
-def record_meeting(conn: sqlite3.Connection, meeting: dict, content_hash: str, status: str, error: Optional[str] = None) -> None:
+def record_meeting(conn: sqlite3.Connection, meeting: dict, content_hash: str, status: str, error: Optional[str] = None, decisions=None) -> None:
     conn.execute(
         """
         INSERT INTO meetings (id, owner_json, created_at, updated_at, transcript_json, content_hash, processing_status, processing_error, processed_at)
@@ -392,6 +465,9 @@ def record_meeting(conn: sqlite3.Connection, meeting: dict, content_hash: str, s
         ),
     )
 
+    conn.execute("UPDATE meetings SET payload_json = ?, attribution_json = ? WHERE id = ?",
+                 (json.dumps(meeting, sort_keys=True), json.dumps(decisions) if decisions is not None else None, meeting["id"]))
+
 
 def existing_meeting_hash(conn: sqlite3.Connection, meeting_id: str) -> Optional[str]:
     row = conn.execute("SELECT content_hash FROM meetings WHERE id = ? AND processing_status = 'processed'", (meeting_id,)).fetchone()
@@ -399,7 +475,19 @@ def existing_meeting_hash(conn: sqlite3.Connection, meeting_id: str) -> Optional
 
 
 def apply_fact(conn: sqlite3.Connection, meeting_id: str, fact: ExtractedFact) -> int:
-    client_id = upsert_client(conn, fact.client_name)
+    row = conn.execute("SELECT payload_json, attribution_json FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+    if not row or not row["payload_json"]:
+        raise ValueError("Meeting attribution metadata missing; reingest the meeting")
+    meeting = json.loads(row["payload_json"])
+    decisions = json.loads(row["attribution_json"]) if row["attribution_json"] else None
+    validate_fact(meeting, fact, decisions)
+    target = resolve_target(meeting)
+    return _write_validated_fact(conn, meeting_id, fact, target)
+
+
+def _write_validated_fact(conn, meeting_id, fact, target):
+    """Internal write after either attribution validation or confirmed human correction."""
+    client_id = upsert_client(conn, target["name"], target["key"])
     context_version = conn.execute(
         "INSERT INTO client_context_versions (client_id, source_meeting_id) VALUES (?, ?)",
         (client_id, meeting_id),

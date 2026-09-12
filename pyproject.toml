@@ -12,6 +12,7 @@ dependencies = [
 corridor-ingest = "corridor_context.ingest:main"
 corridor-mcp = "corridor_context.mcp_server:main"
 corridor-context = "corridor_context.context_cli:main"
+corridor-review = "corridor_context.review_server:main"
 corridor-extract = "corridor_context.extract_cli:main"
 
 [build-system]

@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
+from .llm_attribution import analyze_attribution
+from .attribution import assess_segments, resolve_target
 from .db import connect, get_active_fact_definitions, init_db
 from .extractors import SUPPORTED_EXTRACTORS, extract_meeting_facts
 from .transcript_api import get_meeting
@@ -17,8 +19,12 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--db", type=Path, default=Path("data/client_context.sqlite3"))
     parser.add_argument("--facts-config", type=Path)
-    parser.add_argument("--extractor", choices=sorted(SUPPORTED_EXTRACTORS), default="deterministic")
+    parser.add_argument("--extractor", choices=sorted(SUPPORTED_EXTRACTORS), default="llm")
+    parser.add_argument("--include-attribution", action="store_true", help="Include target and per-segment attribution decisions.")
+    parser.add_argument("--attribution", choices=["llm", "rules"], default="llm")
     args = parser.parse_args()
+    if args.attribution == "rules" and args.extractor == "llm":
+        parser.error("Use --extractor deterministic with --attribution rules")
 
     conn = connect(args.db)
     init_db(conn, args.facts_config)
@@ -26,8 +32,12 @@ def main() -> None:
     conn.close()
 
     meeting = get_meeting(args.base_url, args.meeting_id)
-    facts = extract_meeting_facts(meeting, definitions, args.extractor)
-    print(json.dumps([_fact_to_json(fact) for fact in facts], indent=2, sort_keys=True))
+    decisions = analyze_attribution(meeting, definitions) if args.attribution == "llm" else assess_segments(meeting)
+    facts = extract_meeting_facts(meeting, definitions, args.extractor, decisions)
+    output = [_fact_to_json(fact) for fact in facts]
+    if args.include_attribution:
+        output = {"target": resolve_target(meeting), "attribution": decisions, "facts": output}
+    print(json.dumps(output, indent=2, sort_keys=True))
 
 
 def _fact_to_json(fact) -> dict:

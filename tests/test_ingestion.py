@@ -160,8 +160,8 @@ class IngestionTests(unittest.TestCase):
             ]
             ingest_module.transcript_api.get_meeting = lambda base_url, meeting_id: meeting
 
-            first = ingest("http://stub.test", self.db, extractor="deterministic")
-            second = ingest("http://stub.test", self.db, extractor="deterministic")
+            first = ingest("http://stub.test", self.db, extractor="deterministic", attribution="rules")
+            second = ingest("http://stub.test", self.db, extractor="deterministic", attribution="rules")
         finally:
             ingest_module.transcript_api.list_meetings = original_list
             ingest_module.transcript_api.get_meeting = original_get
@@ -194,7 +194,7 @@ class IngestionTests(unittest.TestCase):
 
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):
-                result = ingest("http://stub.test", self.db, extractor="deterministic", verbose=True)
+                result = ingest("http://stub.test", self.db, extractor="deterministic", verbose=True, attribution="rules")
         finally:
             ingest_module.transcript_api.list_meetings = original_list
             ingest_module.transcript_api.get_meeting = original_get
@@ -223,9 +223,9 @@ class IngestionTests(unittest.TestCase):
                 }
             ]
             ingest_module.transcript_api.get_meeting = lambda base_url, meeting_id: bad_meeting
-            ingest_module.extract_meeting_facts = lambda meeting, definitions, extractor: (_ for _ in ()).throw(RuntimeError("boom"))
+            ingest_module.extract_meeting_facts = lambda meeting, definitions, extractor, decisions=None: (_ for _ in ()).throw(RuntimeError("boom"))
 
-            result = ingest("http://stub.test", self.db, extractor="deterministic")
+            result = ingest("http://stub.test", self.db, extractor="deterministic", attribution="rules")
         finally:
             ingest_module.transcript_api.list_meetings = original_list
             ingest_module.transcript_api.get_meeting = original_get

@@ -1,0 +1,4 @@
+/* Component styling lives in the shared Material UI theme and sx props. */
+html { min-width: 320px; }
+body { margin: 0; }
+#root { min-height: 100vh; }
