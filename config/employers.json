@@ -1,0 +1,5 @@
+[
+  {"key": "acme-benefits", "name": "Acme Benefits", "aliases": ["Acme"], "domains": ["acme.example"]},
+  {"key": "apex-manufacturing", "name": "Apex Manufacturing", "aliases": ["Apex"], "domains": ["apex.example"]},
+  {"key": "northstar-logistics", "name": "Northstar Logistics", "aliases": ["Northstar"], "domains": ["northstar.example"]}
+]

@@ -1,0 +1,526 @@
+{
+  "meetings": [
+    {
+      "id": "ambiguity-former-employer",
+      "target_client_key": "acme-benefits",
+      "owner": {
+        "name": "Jordan Lee",
+        "email": "jordan@corridor.example"
+      },
+      "created_at": "2026-09-12T09:00:00Z",
+      "updated_at": "2026-09-12T09:30:00Z",
+      "attendees": [
+        {
+          "name": "Customer representative",
+          "email": "person@acme.example"
+        },
+        {
+          "name": "Jordan Lee",
+          "email": "jordan@corridor.example"
+        }
+      ],
+      "transcript": [
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "For Acme Benefits, let us review the renewal.",
+          "start_time": "2026-09-12T09:01:00Z",
+          "end_time": "2026-09-12T09:01:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "At my previous employer, Beta, we had 200 employees. Our employer budget was $850 per employee per month.",
+          "start_time": "2026-09-12T09:02:00Z",
+          "end_time": "2026-09-12T09:02:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "We prefer a PPO.",
+          "start_time": "2026-09-12T09:03:00Z",
+          "end_time": "2026-09-12T09:03:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "For Acme Benefits, we prefer an HMO.",
+          "start_time": "2026-09-12T09:04:00Z",
+          "end_time": "2026-09-12T09:04:30Z"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity-mixed-headcounts",
+      "target_client_key": "acme-benefits",
+      "owner": {
+        "name": "Jordan Lee",
+        "email": "jordan@corridor.example"
+      },
+      "created_at": "2026-09-12T10:00:00Z",
+      "updated_at": "2026-09-12T10:30:00Z",
+      "attendees": [
+        {
+          "name": "Customer representative",
+          "email": "person@acme.example"
+        },
+        {
+          "name": "Jordan Lee",
+          "email": "jordan@corridor.example"
+        }
+      ],
+      "transcript": [
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "For Acme Benefits, let us confirm employee counts.",
+          "start_time": "2026-09-12T10:01:00Z",
+          "end_time": "2026-09-12T10:01:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "Acme has 25 benefits-eligible employees and Apex has 900 benefits-eligible employees.",
+          "start_time": "2026-09-12T10:02:00Z",
+          "end_time": "2026-09-12T10:02:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "For Acme Benefits, the corrected employee count is 25.",
+          "start_time": "2026-09-12T10:03:00Z",
+          "end_time": "2026-09-12T10:03:30Z"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity-subsidiary-cycle",
+      "target_client_key": "apex-manufacturing",
+      "owner": {
+        "name": "Jordan Lee",
+        "email": "jordan@corridor.example"
+      },
+      "created_at": "2026-09-12T11:00:00Z",
+      "updated_at": "2026-09-12T11:30:00Z",
+      "attendees": [
+        {
+          "name": "Customer representative",
+          "email": "person@apex.example"
+        },
+        {
+          "name": "Jordan Lee",
+          "email": "jordan@corridor.example"
+        }
+      ],
+      "transcript": [
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@apex.example",
+            "source": "microphone"
+          },
+          "text": "For Apex Manufacturing, let us review benefits.",
+          "start_time": "2026-09-12T11:01:00Z",
+          "end_time": "2026-09-12T11:01:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@apex.example",
+            "source": "microphone"
+          },
+          "text": "Our subsidiary has 45 benefits-eligible employees. Their benefit cycle starts December 1, 2026.",
+          "start_time": "2026-09-12T11:02:00Z",
+          "end_time": "2026-09-12T11:02:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@apex.example",
+            "source": "microphone"
+          },
+          "text": "Their employer budget is $550 per employee per month.",
+          "start_time": "2026-09-12T11:03:00Z",
+          "end_time": "2026-09-12T11:03:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@apex.example",
+            "source": "microphone"
+          },
+          "text": "For Apex Manufacturing, our benefit cycle starts January 1, 2027.",
+          "start_time": "2026-09-12T11:04:00Z",
+          "end_time": "2026-09-12T11:04:30Z"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity-unknown-employer-pricing",
+      "target_client_key": "northstar-logistics",
+      "owner": {
+        "name": "Jordan Lee",
+        "email": "jordan@corridor.example"
+      },
+      "created_at": "2026-09-12T12:00:00Z",
+      "updated_at": "2026-09-12T12:30:00Z",
+      "attendees": [
+        {
+          "name": "Customer representative",
+          "email": "person@northstar.example"
+        },
+        {
+          "name": "Jordan Lee",
+          "email": "jordan@corridor.example"
+        }
+      ],
+      "transcript": [
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@northstar.example",
+            "source": "microphone"
+          },
+          "text": "For Northstar Logistics, let us discuss plan pricing.",
+          "start_time": "2026-09-12T12:01:00Z",
+          "end_time": "2026-09-12T12:01:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@northstar.example",
+            "source": "microphone"
+          },
+          "text": "Beta's employer budget is $900 per employee per month.",
+          "start_time": "2026-09-12T12:02:00Z",
+          "end_time": "2026-09-12T12:02:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@northstar.example",
+            "source": "microphone"
+          },
+          "text": "Their incumbent broker found the Pioneer PPO at $718 per employee per month and the Harbor HMO at $638 per employee per month.",
+          "start_time": "2026-09-12T12:03:00Z",
+          "end_time": "2026-09-12T12:03:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@northstar.example",
+            "source": "microphone"
+          },
+          "text": "For Northstar Logistics, we prefer a PPO.",
+          "start_time": "2026-09-12T12:04:00Z",
+          "end_time": "2026-09-12T12:04:30Z"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity-unidentified-speaker",
+      "target_client_key": "acme-benefits",
+      "owner": {
+        "name": "Jordan Lee",
+        "email": "jordan@corridor.example"
+      },
+      "created_at": "2026-09-12T13:00:00Z",
+      "updated_at": "2026-09-12T13:30:00Z",
+      "attendees": [
+        {
+          "name": "Customer representative",
+          "email": "person@acme.example"
+        },
+        {
+          "name": "Jordan Lee",
+          "email": "jordan@corridor.example"
+        }
+      ],
+      "transcript": [
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "For Acme Benefits, let us confirm the headcount.",
+          "start_time": "2026-09-12T13:01:00Z",
+          "end_time": "2026-09-12T13:01:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Guest caller",
+            "email": "guest@unknown.example",
+            "source": "speaker"
+          },
+          "text": "We have 120 benefits-eligible employees.",
+          "start_time": "2026-09-12T13:02:00Z",
+          "end_time": "2026-09-12T13:02:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "We prefer a PPO.",
+          "start_time": "2026-09-12T13:03:00Z",
+          "end_time": "2026-09-12T13:03:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "For Acme Benefits, we have 25 benefits-eligible employees.",
+          "start_time": "2026-09-12T13:04:00Z",
+          "end_time": "2026-09-12T13:04:30Z"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity-two-customer-attendees",
+      "target_client_key": "apex-manufacturing",
+      "owner": {
+        "name": "Jordan Lee",
+        "email": "jordan@corridor.example"
+      },
+      "created_at": "2026-09-12T14:00:00Z",
+      "updated_at": "2026-09-12T14:30:00Z",
+      "attendees": [
+        {
+          "name": "Customer representative",
+          "email": "person@apex.example"
+        },
+        {
+          "name": "Jordan Lee",
+          "email": "jordan@corridor.example"
+        },
+        {
+          "name": "Acme representative",
+          "email": "guest@acme.example"
+        }
+      ],
+      "transcript": [
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@apex.example",
+            "source": "microphone"
+          },
+          "text": "For Apex Manufacturing, let us review the renewal.",
+          "start_time": "2026-09-12T14:01:00Z",
+          "end_time": "2026-09-12T14:01:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Acme representative",
+            "email": "guest@acme.example",
+            "source": "microphone"
+          },
+          "text": "Acme Benefits has 300 benefits-eligible employees.",
+          "start_time": "2026-09-12T14:02:00Z",
+          "end_time": "2026-09-12T14:02:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@apex.example",
+            "source": "microphone"
+          },
+          "text": "They prefer an HMO.",
+          "start_time": "2026-09-12T14:03:00Z",
+          "end_time": "2026-09-12T14:03:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@apex.example",
+            "source": "microphone"
+          },
+          "text": "For Apex Manufacturing, we have 31 benefits-eligible employees.",
+          "start_time": "2026-09-12T14:04:00Z",
+          "end_time": "2026-09-12T14:04:30Z"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity-alias-topic-recovery",
+      "target_client_key": "northstar-logistics",
+      "owner": {
+        "name": "Jordan Lee",
+        "email": "jordan@corridor.example"
+      },
+      "created_at": "2026-09-12T15:00:00Z",
+      "updated_at": "2026-09-12T15:30:00Z",
+      "attendees": [
+        {
+          "name": "Customer representative",
+          "email": "person@northstar.example"
+        },
+        {
+          "name": "Jordan Lee",
+          "email": "jordan@corridor.example"
+        }
+      ],
+      "transcript": [
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@northstar.example",
+            "source": "microphone"
+          },
+          "text": "For Northstar, we prefer a PPO.",
+          "start_time": "2026-09-12T15:01:00Z",
+          "end_time": "2026-09-12T15:01:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@northstar.example",
+            "source": "microphone"
+          },
+          "text": "Unlike Apex, Northstar prefers an HMO.",
+          "start_time": "2026-09-12T15:02:00Z",
+          "end_time": "2026-09-12T15:02:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@northstar.example",
+            "source": "microphone"
+          },
+          "text": "Our employer budget is $800 per employee per month.",
+          "start_time": "2026-09-12T15:03:00Z",
+          "end_time": "2026-09-12T15:03:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@northstar.example",
+            "source": "microphone"
+          },
+          "text": "For Northstar, our employer budget is $640 per employee per month.",
+          "start_time": "2026-09-12T15:04:00Z",
+          "end_time": "2026-09-12T15:04:30Z"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity-unstructured-arrangement",
+      "target_client_key": "apex-manufacturing",
+      "owner": {
+        "name": "Jordan Lee",
+        "email": "jordan@corridor.example"
+      },
+      "created_at": "2026-09-12T16:00:00Z",
+      "updated_at": "2026-09-12T16:30:00Z",
+      "attendees": [
+        {
+          "name": "Customer representative",
+          "email": "person@apex.example"
+        },
+        {
+          "name": "Jordan Lee",
+          "email": "jordan@corridor.example"
+        }
+      ],
+      "transcript": [
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@apex.example",
+            "source": "microphone"
+          },
+          "text": "For Apex Manufacturing, let us discuss the renewal.",
+          "start_time": "2026-09-12T16:01:00Z",
+          "end_time": "2026-09-12T16:01:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@apex.example",
+            "source": "microphone"
+          },
+          "text": "They mentioned an unusual arrangement with a broker, but no one could confirm which employer it belongs to.",
+          "start_time": "2026-09-12T16:02:00Z",
+          "end_time": "2026-09-12T16:02:30Z"
+        }
+      ]
+    },
+    {
+      "id": "ambiguity-entirely-other-employer",
+      "target_client_key": "acme-benefits",
+      "owner": {
+        "name": "Jordan Lee",
+        "email": "jordan@corridor.example"
+      },
+      "created_at": "2026-09-12T17:00:00Z",
+      "updated_at": "2026-09-12T17:30:00Z",
+      "attendees": [
+        {
+          "name": "Customer representative",
+          "email": "person@acme.example"
+        },
+        {
+          "name": "Jordan Lee",
+          "email": "jordan@corridor.example"
+        }
+      ],
+      "transcript": [
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "For Northstar Logistics, we have 777 benefits-eligible employees.",
+          "start_time": "2026-09-12T17:01:00Z",
+          "end_time": "2026-09-12T17:01:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "Their employer budget is $999 per employee per month.",
+          "start_time": "2026-09-12T17:02:00Z",
+          "end_time": "2026-09-12T17:02:30Z"
+        },
+        {
+          "speaker": {
+            "name": "Customer representative",
+            "email": "person@acme.example",
+            "source": "microphone"
+          },
+          "text": "They prefer a PPO.",
+          "start_time": "2026-09-12T17:03:00Z",
+          "end_time": "2026-09-12T17:03:30Z"
+        }
+      ]
+    }
+  ]
+}

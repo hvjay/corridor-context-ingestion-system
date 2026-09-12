@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "corridor-context": {
+      "command": "/Users/harrisvijayagopal/Documents/SWE/corridor_takehome/.venv/bin/python",
+      "args": [
+        "-m",
+        "corridor_context.mcp_server",
+        "--db",
+        "/Users/harrisvijayagopal/Documents/SWE/corridor_takehome/data/client_context.sqlite3"
+      ]
+    }
+  }
+}

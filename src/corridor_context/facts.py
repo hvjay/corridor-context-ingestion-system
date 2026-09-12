@@ -5,10 +5,11 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
+from .attribution import assess_segments, resolve_target
 from .types import ExtractedFact, FactDefinition, SourceSpan
 
 EXTRACTOR_NAME = "deterministic_rules"
-EXTRACTOR_VERSION = "2026-08-13.1"
+EXTRACTOR_VERSION = "2026-09-12.1"
 DEFAULT_FACT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "facts.json"
 
 
@@ -31,11 +32,6 @@ def load_fact_definitions(config_path: Path = DEFAULT_FACT_CONFIG_PATH) -> List[
 
 FACT_DEFINITIONS = load_fact_definitions()
 
-CLIENT_PATTERNS = [
-    r"(?:client is|For) (?P<client>[A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)+)",
-    r"(?P<client>[A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)+) (?:has|now has|still prefers|needs|currently says)",
-]
-
 MONTHS = {
     "January": "01", "February": "02", "March": "03", "April": "04",
     "May": "05", "June": "06", "July": "07", "August": "08",
@@ -53,32 +49,19 @@ def active_definitions() -> List[FactDefinition]:
 
 
 def extract_client_name(meeting: dict) -> Optional[str]:
-    for segment in meeting.get("transcript", []):
-        text = segment.get("text", "")
-        for pattern in CLIENT_PATTERNS:
-            match = re.search(pattern, text)
-            if match:
-                client = match.group("client").strip()
-                if client not in {"The Client", "Got It", "Finance"}:
-                    return client
-    for attendee in meeting.get("attendees", []):
-        email = attendee.get("email", "")
-        if email.endswith("@acme.example"):
-            return "Acme Benefits"
-        if email.endswith("@apex.example"):
-            return "Apex Manufacturing"
-        if email.endswith("@northstar.example"):
-            return "Northstar Logistics"
-    return None
+    return resolve_target(meeting)["name"]
 
 
-def extract_facts(meeting: dict, definitions: Iterable[FactDefinition]) -> List[ExtractedFact]:
+def extract_facts(meeting: dict, definitions: Iterable[FactDefinition], decisions=None) -> List[ExtractedFact]:
     client_name = extract_client_name(meeting)
     if not client_name:
         return []
     enabled = {definition.fact_type for definition in definitions if definition.active}
     facts: List[ExtractedFact] = []
-    for segment in meeting.get("transcript", []):
+    decisions = assess_segments(meeting) if decisions is None else decisions
+    for segment, decision in zip(meeting.get("transcript", []), decisions):
+        if decision["status"] != "accepted":
+            continue
         text = segment.get("text", "")
         span = SourceSpan(text, segment.get("start_time"), segment.get("end_time"))
         observed_at = segment.get("start_time") or meeting.get("updated_at") or meeting.get("created_at")

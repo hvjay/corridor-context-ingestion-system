@@ -1,98 +1,339 @@
-# Implementation Notes
+# Implementation notes
 
-## Run commands
+## Run the React review UI
 
-Start the transcript stub in one terminal:
+From the project directory:
+
+```bash
+uv run corridor-review --demo
+```
+
+Open http://127.0.0.1:8765. The React bundle is checked in, so starting the UI does
+not require Node or an API key. `--demo` uses the nine ambiguous transcript
+scenarios in a separate temporary database, with explicitly labeled offline-rule
+results. This previews the UI; it does not evaluate the LLM.
+
+To browse your ingested database instead:
+
+```bash
+uv run corridor-review --db data/client_context.sqlite3
+```
+
+If port 8765 is already in use, stop the earlier server or pass `--port 8768`.
+Without installing CLI entry points, the equivalent command is:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m corridor_context.review_server --demo
+```
+
+Select a customer, inspect proposed values, and expand source evidence. Search
+filters customers; Refresh fetches newly ingested records. Empty and error states
+are handled. Each open review has a correction input: preview an agent proposal,
+then explicitly apply it, or ignore the item without changing facts. Resolved
+items remain accessible in the Resolved view.
+
+## Develop the React app
+
+React uses Material UI with a shared theme in `frontend/src/theme.js`. Customer
+navigation and review cards live in `frontend/src/components/`; data fetching is
+isolated in `frontend/src/hooks/useReviews.js`. Component styling uses the theme
+and `sx` props, with only a minimal global CSS file. Dependencies are pinned in
+`frontend/package-lock.json`. esbuild produces the self-contained assets served
+by Python from `src/corridor_context/review_ui/`.
+
+```bash
+npm --prefix frontend ci
+npm --prefix frontend run build
+# While editing React/CSS, in a second terminal:
+npm --prefix frontend run dev
+```
+
+Keep the Python review server running. Watch mode rebuilds changed React/CSS;
+refresh the browser to see edits. Re-run build after changing `frontend/index.html`.
+Commit source and rebuilt assets together. The frontend never receives an API key.
+
+## Ingest using LLM attribution and extraction
+
+Create a local `.env` file using `.env.example`:
+
+```dotenv
+OPENAI_API_KEY=your-key
+OPENAI_ATTRIBUTION_MODEL=gpt-5-mini
+```
+
+Start the transcript API, then ingest in another terminal:
 
 ```bash
 node api_stub_server.js
+uv run corridor-ingest --extractor llm --attribution llm --verbose
 ```
 
-Fixture data lives in `fixtures/`:
+Both flags default to `llm`. One structured Responses API call per changed meeting
+produces employer decisions, source-based explanations, evidence indexes, and
+candidate facts. No regex attribution veto runs on this path. A clear pronoun can
+be accepted when the full conversation establishes its referent. Mixed-employer
+or uncertain passages remain held in full for review.
 
-- `dummy_data.txt`: original sample transcript set used by default by the stub API.
-- `dummy_data_initial.txt`: initial freshness-demo state.
-- `dummy_data_updated.txt`: updated freshness-demo state with an Acme Benefits employee-count correction.
+The selected customer still comes from trusted `target_client_key` metadata, or
+exactly one configured attendee employer. The model cannot change the target or
+create employers. `config/employers.json` contains stable keys, canonical names,
+aliases, and exact attendee email domains. Set `CORRIDOR_EMPLOYERS_CONFIG` to use
+another directory. Keep keys stable when renaming employers.
 
-Ingest transcripts into SQLite:
+The response is validated before writes: complete ordered segment coverage,
+recognized employer keys, valid evidence indexes, exact source quotations,
+configured fact types, supported schema constraints, and target ownership for
+accepted candidates. Invalid output, refusals, incomplete responses, missing keys,
+and API failures fail that meeting and preserve its last committed client facts.
+The meeting remains retryable; there is no silent fallback to rules.
+
+Validated decisions, model name, policy version, explanations, and evidence are
+stored separately from transcript input in `meetings.attribution_json`.
+Database writes check the persisted decisions and proposed value without calling
+the model again. The meeting hash includes model, attribution mode, policy,
+employer directory, and fact definitions, so changes to these inputs trigger
+reprocessing. The legacy confidence field is a fixed compatibility value, not a
+calibrated probability; review the evidence and decision instead.
+
+The request follows the official [Structured Outputs contract](https://developers.openai.com/api/docs/guides/structured-outputs).
+Structured output constrains the response shape; it does not guarantee correct
+employer reasoning. Evaluate live responses against representative transcripts
+before production deployment. Automated LLM tests use mocked responses.
+
+Dry-run a meeting with decisions and proposed review candidates:
 
 ```bash
-uv run corridor-ingest --extractor deterministic
-uv run corridor-ingest --extractor llm --verbose
+uv run corridor-extract mtg_acme2026052001 --include-attribution
 ```
 
-Read a client context directly:
+## Explicit offline baseline
+
+The old regex policy lives in `attribution_rules.py` only as a baseline for demos
+and regression tests. Offline extraction must be explicitly requested:
+
+```bash
+uv run corridor-ingest --extractor deterministic --attribution rules
+uv run corridor-extract mtg_acme2026052001 --extractor deterministic --attribution rules --include-attribution
+```
+
+`--extractor deterministic --attribution llm` uses LLM attribution with the existing
+value rules. `--extractor llm --attribution rules` is rejected to avoid mixing
+incompatible decision formats. The normal LLM mode extracts values and attribution
+in a single call, including review candidates for all configured fact types.
+
+## Ambiguous transcript scenarios
+
+`fixtures/ambiguous_transcripts.json` contains nine meetings covering former
+employers, mixed headcounts, subsidiaries, unknown companies and broker pricing,
+unidentified speakers, multiple customer attendees, alias/topic recovery,
+unstructured statements, and a meeting about a different employer. The explicit
+offline baseline produces 17 held passages and 19 proposed values. These counts
+are baseline expectations, not promised LLM outputs.
+
+```bash
+STUB_DATA_FILE=fixtures/ambiguous_transcripts.json PORT=8001 node api_stub_server.js
+# In another terminal, use real LLM analysis:
+uv run corridor-ingest --base-url http://127.0.0.1:8001 --db data/ambiguity_test.sqlite3
+uv run corridor-review --db data/ambiguity_test.sqlite3 --port 8767
+```
+
+The original `dummy_data.txt`, `dummy_data_initial.txt`, and
+`dummy_data_updated.txt` fixtures remain available for the freshness demo.
+
+## Storage and review evidence
+
+SQLite uses WAL mode and per-meeting write transactions. `fact_versions` contains
+accepted current and historical facts. `fact_definitions` is synced from
+`config/facts.json`; each distinct config state is tracked in
+`fact_definition_versions`. New configured types can be extracted by the LLM;
+the offline baseline requires a matching rule.
+
+`attribution_reviews` stores held passages and immutable snapshots of speaker,
+timestamps, neighboring conversation, and any LLM-cited evidence. Its customer
+key is the review destination, not an assertion of ownership.
+`review_fact_candidates` stores proposed type, label, JSON value, display value,
+source quote, model/version, and proposed subject key when known. LLM candidates
+are saved directly from validated analysis, rather than being re-extracted with
+rules. Unstructured passages remain visible for manual interpretation.
+
+Old passage-only review records backfill once using offline rules. If the
+original source no longer matches the stored meeting, surrounding context is
+marked unavailable. Review records identify LLM versus offline/legacy provenance.
+Identical evidence is deduplicated; a different model/policy analysis may create
+a separate review record for audit. Existing accepted facts are not automatically
+retracted when a later policy rejects their evidence: validate a fresh historical
+rebuild before replacing an existing database.
+
+`ingestion_runs` and `meeting_processing_attempts` preserve success, skip, and
+failure outcomes. Candidate records and accepted facts commit together, in
+separate tables. Existing schemas migrate additively.
+
+## Read APIs and MCP
+
+The local review server binds only to loopback and serves React plus read
+endpoints: `GET /api/customers` returns names, keys, and counts;
+`GET /api/customers/{key}` returns scoped review records. Unknown keys return 404.
+Each read uses a SQLite snapshot. There is no login or multi-user authorization
+model in this takehome.
 
 ```bash
 uv run corridor-context "Acme Benefits" --history
-```
-
-Dry-run extraction for one meeting without writing facts to the DB:
-
-```bash
-uv run corridor-extract mtg_acme2026052001 --extractor deterministic
-OPENAI_API_KEY=... uv run corridor-extract mtg_acme2026052001 --extractor llm
-```
-
-Run the MCP stdio server:
-
-```bash
 uv run corridor-mcp
 ```
 
-Run tests:
+MCP tool `get_client_context` accepts `{"client":"Acme Benefits","includeHistory":false}`
+and returns current facts, normalized client key, context version, source meeting,
+excerpts/timestamps, extractor/model version, and optional history. Missing/empty
+client input is invalid; unknown customers return not found; storage failures
+return internal errors. Reads use persisted context, never review candidates.
+
+## Tests
 
 ```bash
 uv run python -m unittest discover -s tests
+npm --prefix frontend ci
+npm --prefix frontend test
+npm --prefix frontend run build
 ```
 
-## Storage model
+Backend tests cover offline scenarios, LLM validation, a context-resolved pronoun,
+wrong employers, fabricated evidence, missing segment coverage, invalid values,
+API failure preservation, one-call ingestion, persisted decisions, and candidate
+isolation. React tests cover evidence rendering and escaping transcript content.
 
-The database lives at `data/client_context.sqlite3` by default. SQLite runs in WAL mode so readers can keep reading a consistent snapshot while ingestion writes in transactions. Each pipeline execution creates an `ingestion_runs` row, and every processed, skipped, or failed meeting creates a `meeting_processing_attempts` row linked to that run.
+Material UI styling uses an Emotion cache with a fresh nonce supplied by the
+Python server for each HTML response. Script restrictions remain unchanged;
+inline style attributes are allowed for component transitions. Restart the Python
+server after upgrading from the earlier plain React UI so nonce support is active.
 
-`fact_definitions` stores fact types as data and is synced from `config/facts.json` whenever the pipeline starts. New facts can be added without changing `fact_versions`; set `active = true` when normal ingestion should extract them. Set `active = false` to keep a definition documented while skipping it in daily ingestion. Use `uv run corridor-ingest --facts-config path/to/facts.json` to test an alternate fact list. Existing DB rows are updated to match the config, including the `active` flag. Each distinct definition state is also appended to `fact_definition_versions`, and extracted facts store `fact_definition_version_id` so a reader can audit which definition/config produced a value.
+## Full meeting transcript in reviews
 
-`fact_versions` stores every extracted value. Current values are marked with `is_current = 1`; older values remain for audit history. Ingestion flips the previous current row and inserts the new current row inside one transaction.
+“View source & full transcript” shows every meeting passage in order, with speaker,
+start/end timestamps, and the flagged passage highlighted. New review records save
+an immutable full transcript in their evidence snapshot so subsequent meeting
+edits cannot change the reviewed version. Existing nearby evidence is retained.
 
-## MCP tool contract
+Older records without a full snapshot show the latest stored transcript only when
+its meeting still resolves to the review's customer. The UI explicitly labels
+that version as latest, not the original captured transcript. If the source
+passage no longer matches, it is not highlighted. If no suitable full transcript
+is available, the UI says so and retains the previously saved context.
 
-Tool name: `get_client_context`
 
-Input:
+## Human-directed corrections and resolution
 
-```json
-{
-  "client": "Acme Benefits",
-  "includeHistory": false
-}
-```
+Each review has **Correction instructions**, **Your name**, **Preview correction**,
+and **Ignore without changes** controls. Example: “Set employee count to 25. The
+200 employees refer to the previous employer.” The agent returns a before/after
+proposal, an ignore proposal, or a clarification question. Only clicking **Apply
+correction** writes the proposed changes. Editing instructions invalidates the
+visible preview. A stale-proposal conflict requires generating a new proposal.
 
-Output includes the normalized client key, context version, current facts, source meeting IDs, source excerpts/timestamps, extractor version, confidence, and optional history.
+Agent planning uses the server-side `OPENAI_API_KEY` and the attribution model
+setting. Without a key, the UI explains how to enable it; Ignore remains usable.
+The demo isolates writes in its temporary database. Live LLM quality is not covered
+by the mocked integration tests. Reviewer names are self-reported local audit
+labels, not authenticated identities; this remains a loopback development app.
 
-Errors:
+Supported operations are setting a configured fact, removing its current value
+while retaining history, and resolving/ignoring without changing facts. Changes
+are scoped to the review's customer. Instructions about another employer should
+result in ignore or clarification, never reassignment. Pricing changes replace
+the whole array, so the proposal must preserve plans not being changed.
 
-- Invalid request: missing or empty `client`.
-- Not found: no persisted client context for the requested client.
-- Internal error: database or server failure.
+`correction_proposals` retains instructions, reviewer, model, validated changes,
+and the customer fact/definition baseline. `review_resolutions` records the final
+action, instructions, reviewer, summary, and before/after snapshots. Each review
+has at most one resolution. Repeated application of the same proposal is
+idempotent; an already-resolved item cannot be silently resolved again.
 
-## Dynamic facts
+Apply rechecks the current facts and definitions against the preview baseline.
+Concurrent changes return 409 and leave facts untouched. Facts, source provenance,
+context versions, and resolution records commit atomically. A human correction
+uses its own source record rather than pretending that corrected text appeared
+in the meeting. MCP provenance includes `sourceType: human_correction` and
+`reviewResolutionId`; existing history is preserved. Removing a current fact also
+advances the customer's context version. Future ingestion follows normal version
+update rules; human corrections are not permanent locks on a fact.
 
-To add a new fact such as `average_employee_age`, add an object to `config/facts.json` with a stable `fact_type`, value schema, extractor name/version, and `active` flag. Future ingestion will extract it when active once a matching extractor exists. Manual backfill can be implemented by reprocessing stored transcripts for selected clients/date ranges using the same `fact_versions` table.
+Write routes (all JSON POSTs):
 
-## Extractor modes
+- `/api/customers/{key}/reviews/{id}/proposals`: `instruction`, `reviewer`, `requestId`.
+- `/api/customers/{key}/reviews/{id}/apply`: saved `proposalId` only.
+- `/api/customers/{key}/reviews/{id}/ignore`: optional `instruction`, `reviewer`, `requestId`.
 
-The deterministic extractor in `facts.py` remains available and is the default. Use `--extractor llm` to call the optional OpenAI structured-output extractor in `llm_extractor.py`; it requires `OPENAI_API_KEY` and can be compared with `uv run corridor-extract ...` before writing anything to SQLite. Add `--verbose` to `corridor-ingest` to print per-meeting progress to stderr while keeping the final JSON summary on stdout. The LLM returns structured facts, but database writes still go through the same validation/provenance/transaction path.
+The customer-list response includes a session `csrfToken`; React sends it in
+`X-CSRF-Token`. Writes also validate Host, Origin when present, content type,
+body size, customer/review association, fact types, values, and supporting
+instruction excerpts. The agent cannot execute arbitrary SQL or modify another
+customer. API errors use 400 for invalid input, 403 for origin/token failures,
+404 for missing scoped records, 409 for stale/conflicting operations, and 503
+when the agent is unavailable. No background LLM call is made by Ignore or Apply.
 
-Create a local `.env` file for API-backed extraction:
+The Open view and customer badges count unresolved items. Resolved shows both
+corrected and ignored items, including reviewer, instructions, summary, and time.
+
+### Per-item agent recommendations
+
+Every open review has **Suggest resolution**, requiring no reviewer instructions. This calls
+`POST /api/customers/{key}/reviews/{id}/suggestion` with the existing CSRF protection. The agent
+receives the target employer, current facts and schemas, flagged passage, saved context and full
+available transcript (with historical/fallback provenance). It recommends updating facts,
+ignoring the item, or asking a specific clarification question, with exact evidence quotes.
+The prompt distinguishes preferences from confirmed budgets and resolves pronouns using context.
+
+Recommendations are generated on demand and stored in SQLite `review_suggestions`; loading a
+customer never triggers model calls. Repeated requests reuse saved advice. A change to customer
+facts, definitions, employer configuration or source context marks advice stale and requires
+regeneration. Changes during generation reject the result. Recommendations do not modify facts
+or resolve reviews. **Use suggested instructions** lets the human adopt/edit actionable advice,
+then use the existing preview-and-apply flow. Clarification recommendations never prefill answers.
+
+Agent calls require `OPENAI_API_KEY`. Tests mock agent output and check persistence, evidence
+validation, customer isolation, stale-state rejection and approval flow; they do not establish
+live-model semantic accuracy. The $550 subsidiary/preference example and explicit Apex budget
+example are included in the recommendation prompt as contrasting cases.
+
+Actionable recommendations also offer **Accept AI suggestion**. The client submits only the saved
+suggestion ID, reviewer and retry ID to `POST .../accept-suggestion`. The server checks customer
+scope and suggestion freshness, translates the saved instructions through the validated correction
+planner, and applies using the existing atomic, audited correction path. A changed action or
+clarification is returned for further human review. Repeated acceptance requests return the existing
+resolution. Clarification and stale suggestions cannot be accepted. The manual edit/preview flow remains available.
+
+### Shared UI and MCP database
+
+The current review workspace is persisted in `data/client_context.sqlite3`. It was copied from
+the temporary demo workspace, preserving its sample review records and any saved state. The original
+temporary database was retained. This switch does not turn unconfirmed candidates into accepted facts.
+
+Start the UI on the same file used by MCP:
 
 ```bash
-OPENAI_API_KEY=sk-...
-# Optional:
-OPENAI_EXTRACT_MODEL=gpt-5-mini
+cd /Users/harrisvijayagopal/Documents/SWE/corridor_takehome
+uv run corridor-review --db /Users/harrisvijayagopal/Documents/SWE/corridor_takehome/data/client_context.sqlite3 --port 8765
 ```
 
-The CLI commands load `.env` automatically via `python-dotenv`; `.env` is ignored by git.
+`mcp-config.json` contains a standard `mcpServers` entry with absolute command/database paths.
+Add that entry using the other agent application's MCP settings; the application-specific import
+location varies. It starts a local stdio server (not an HTTP endpoint). The UI remains at port 8765;
+the agent launches its own MCP process against the same SQLite file. No API key is required for MCP reads.
 
-## Fault tolerance audit trail
+Ask the connected agent to call `get_client_context` with:
 
-`ingestion_runs` records each on-demand or cron invocation with status, extractor mode, counters, and any run-level error. `meeting_processing_attempts` records every per-meeting outcome, including skipped meetings and failures. Client context updates remain all-or-nothing per meeting: facts are only updated in the same transaction as the successful meeting record and attempt row. Failed attempts are retained for retries/debugging without changing the last committed current context.
+```json
+{"client":"Apex Manufacturing","includeHistory":true}
+```
+
+Each tool call reads persisted facts again. Accepted updates appear on the next call with their
+human-correction provenance and prior history; no MCP restart or re-ingestion is required. The
+agent must call the tool again rather than rely on an earlier answer. An employer with no accepted
+facts/client record returns not found until its first fact is accepted. Ignore resolves a review
+but does not create a client fact. `tests/test_mcp_updates.py` verifies fresh reads in one continuing
+MCP subprocess before and after a correction using an isolated database and mocked model output.
+
+Editing correction instructions or reviewer details keeps the existing preview visible, marks it out of date, and disables Apply. Use **Update preview** to regenerate it. The preview also shows the instructions used, so it remains clear which text produced the displayed changes. A failed refresh leaves the old preview visible and blocked.
+
+After a successful Apply, Accept AI suggestion, or Ignore, the UI opens a confirmation dialog using the committed resolution returned by the server. It displays customer, summary, reviewer/time, and before/after values computed from the saved audit snapshots, or explicitly states that no fact values changed. The dialog survives the review list refresh and offers Done and View resolved items. Failed requests do not show a success confirmation.
+
+Recommendation evidence uses request-scoped passage IDs constrained to the available sources in the structured output schema. The server validates these IDs and resolves them to original stored transcript text before saving/displaying evidence. The agent no longer reproduces exact quotes; punctuation or whitespace drift cannot cause a quote-match failure. Unknown or empty citations are still rejected without saving a suggestion or modifying facts. Existing saved recommendations remain compatible.

@@ -1,0 +1,55 @@
+{
+  "ambiguity-former-employer": {
+    "review_segments": [
+      1,
+      2
+    ]
+  },
+  "ambiguity-mixed-headcounts": {
+    "review_segments": [
+      1
+    ]
+  },
+  "ambiguity-subsidiary-cycle": {
+    "review_segments": [
+      1,
+      2
+    ]
+  },
+  "ambiguity-unknown-employer-pricing": {
+    "review_segments": [
+      1,
+      2
+    ]
+  },
+  "ambiguity-unidentified-speaker": {
+    "review_segments": [
+      1,
+      2
+    ]
+  },
+  "ambiguity-two-customer-attendees": {
+    "review_segments": [
+      1,
+      2
+    ]
+  },
+  "ambiguity-alias-topic-recovery": {
+    "review_segments": [
+      1,
+      2
+    ]
+  },
+  "ambiguity-unstructured-arrangement": {
+    "review_segments": [
+      1
+    ]
+  },
+  "ambiguity-entirely-other-employer": {
+    "review_segments": [
+      0,
+      1,
+      2
+    ]
+  }
+}

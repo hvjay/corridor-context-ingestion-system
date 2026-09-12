@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .attribution import employer_directory
 from .db import connect, init_db
 from .facts import normalize_client_key
 
@@ -15,6 +16,10 @@ def get_client_context(db_path: Path, client: str, include_history: bool = False
     conn = connect(db_path)
     init_db(conn)
     client_key = normalize_client_key(client)
+    for employer in employer_directory():
+        if client.strip().casefold() in {n.casefold() for n in [employer["key"], employer["name"], *employer.get("aliases", [])]}:
+            client_key = employer["key"]
+            break
     row = conn.execute("SELECT * FROM clients WHERE client_key = ?", (client_key,)).fetchone()
     if not row:
         conn.close()
@@ -37,7 +42,9 @@ def get_client_context(db_path: Path, client: str, include_history: bool = False
         """,
         (row["id"],),
     ).fetchall()
-    context_version = 0
+    context_version = conn.execute(
+        "SELECT COALESCE(MAX(id), 0) FROM client_context_versions WHERE client_id = ?", (row["id"],)
+    ).fetchone()[0]
     facts = {}
     for fact in current_rows:
         context_version = max(context_version, int(fact["context_version"]))
@@ -87,6 +94,8 @@ def _format_fact(row: sqlite3.Row) -> dict[str, Any]:
         "extractedAt": row["extracted_at"],
         "provenance": {
             "meetingId": row["source_meeting_id"],
+            "sourceType": "human_correction" if row["review_resolution_id"] else "transcript",
+            "reviewResolutionId": row["review_resolution_id"],
             "excerpt": row["source_excerpt"],
             "startTime": row["source_start_time"],
             "endTime": row["source_end_time"],
