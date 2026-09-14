@@ -88,6 +88,7 @@ export default function CorrectionPanel({review, customerKey, csrfToken, onResol
         {proposal.action === 'clarify' ? <Alert severity="info">{proposal.question} Update your instructions and preview again.</Alert> : <>
           <Stack spacing={2} divider={<Divider/>}>{proposal.changes.map(change => <Box key={change.fact_type}>
             <Typography variant="subtitle2">{change.label}</Typography>
+            {change.effective_from && <Typography variant="caption">Applies from {change.effective_from}{change.effective_to ? ` until ${change.effective_to} (exclusive)` : ''}</Typography>}
             <Typography variant="body2" color="text.secondary">Current: {change.before?.display_value || 'Not recorded'}</Typography>
             <Typography variant="body2" sx={{fontWeight: 600}}>Proposed: {change.operation === 'remove' ? 'Remove current fact (history retained)' : change.display_value}</Typography>
           </Box>)}</Stack>

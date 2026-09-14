@@ -27,7 +27,7 @@ export default function AppliedConfirmation({receipt, onClose, onViewResolved}) 
         <Typography variant="body2" color="text.secondary">Before: {change.before}</Typography>
         <Typography variant="body2" sx={{fontWeight: 600}}>After: {change.after}</Typography>
       </div>)}</Stack>
-      {!changes.length && <Typography variant="body2">{resolution.action === 'ignored' ? 'No customer facts were changed.' : 'The accepted values were already current; no fact values changed.'}</Typography>}
+      {!changes.length && <Typography variant="body2">{resolution.action === 'ignored' ? 'No customer facts were changed.' : 'No current fact values changed. The evidence and resolution were saved.'}</Typography>}
       <Typography variant="caption" color="text.secondary" sx={{display: 'block', mt: 2}}>Recorded by {resolution.reviewer} · {resolution.created_at}</Typography>
     </DialogContent>
     <DialogActions>

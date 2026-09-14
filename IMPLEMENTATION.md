@@ -160,9 +160,7 @@ Old passage-only review records backfill once using offline rules. If the
 original source no longer matches the stored meeting, surrounding context is
 marked unavailable. Review records identify LLM versus offline/legacy provenance.
 Identical evidence is deduplicated; a different model/policy analysis may create
-a separate review record for audit. Existing accepted facts are not automatically
-retracted when a later policy rejects their evidence: validate a fresh historical
-rebuild before replacing an existing database.
+a separate review record for audit. Source revisions retire superseded evidence from current selection while retaining fact history. Re-ingestion after a policy change can alter current selection; inspect a historical rebuild before deploying a policy change.
 
 `ingestion_runs` and `meeting_processing_attempts` preserve success, skip, and
 failure outcomes. Candidate records and accepted facts commit together, in
@@ -337,3 +335,64 @@ Editing correction instructions or reviewer details keeps the existing preview v
 After a successful Apply, Accept AI suggestion, or Ignore, the UI opens a confirmation dialog using the committed resolution returned by the server. It displays customer, summary, reviewer/time, and before/after values computed from the saved audit snapshots, or explicitly states that no fact values changed. The dialog survives the review list refresh and offers Done and View resolved items. Failed requests do not show a success confirmation.
 
 Recommendation evidence uses request-scoped passage IDs constrained to the available sources in the structured output schema. The server validates these IDs and resolves them to original stored transcript text before saving/displaying evidence. The agent no longer reproduces exact quotes; punctuation or whitespace drift cannot cause a quote-match failure. Unknown or empty citations are still rejected without saving a suggestion or modifying facts. Existing saved recommendations remain compatible.
+
+## Timeline reconciliation and older transcripts
+
+Facts now have three separate time dimensions:
+
+- `statementAt` (`observed_at` in SQLite) comes from the source segment timestamp, or explicit meeting `meeting_date`/`occurred_at`. Record creation and update timestamps are not meeting dates. A new fact with no reliable statement time fails ingestion and remains retryable rather than guessing from upload time.
+- `effectiveFrom` and optional exclusive `effectiveTo` describe a stated period. The LLM extracts these separately from the value, with supporting `temporalEvidence` validated against the exact source excerpt. Without an explicit period, selection assumes applicability begins at statement time. Relative/uncertain dates should be held for human review. A benefit-cycle date value alone is not the effective date of the assertion.
+- `learnedAt` is when this fact version was persisted (`extracted_at`). `sourceUpdatedAt` separately captures the API record's modification timestamp for that source revision. Neither determines which employer fact is current.
+
+Every accepted assertion is appended. For a requested time, the reconciler filters out future,
+expired, superseded-source, and retracted claims; selects the latest applicable effective start;
+and uses latest statement time to break ties, followed by the latest source meeting `created_at`
+when those timestamps match. Local ingestion time never establishes precedence. If source creation
+metadata is unavailable or invalid, that tie-breaker is omitted. Still equally ranked different values are returned under
+`conflicts`, with no winner in `facts`. Equivalent tied values select stable source identity rather
+than arrival order. This is an explicit policy, not a claim that every business conflict is decidable
+from timestamps. A finite temporary period ends exclusively and the underlying open-ended claim
+can become applicable again.
+
+Example: May says 25 employees; June says 30; May is uploaded in September. Current stays 30,
+and May's evidence is retained. A July statement correcting May to 26 for May–June changes the
+historical May result without changing June. A January 2027 change is stored now but not selected
+until January. Readers select from the timeline inside one SQLite read transaction, so transitions
+happen on the next read without cron or re-ingestion. The `is_current` column is a write-time
+projection; API/MCP reads use the reconciler rather than relying on that projection as the clock moves.
+
+Revised transcripts carry a source revision hash. Prior versions stay in history but no longer
+participate in selection once the replacement revision commits—even if a fact was removed from the
+new transcript. A failed revision preserves the last successful source and remains retryable. An
+older API revision of the same meeting is skipped. Human removals create dated retractions, preventing
+late older transcripts from resurrecting a removed fact; a later statement can establish a new value.
+Human set corrections may specify an explicit period and display it in the preview. Dated removals
+are not supported and require clarification.
+
+MCP `get_client_context` adds optional `asOf`:
+
+```json
+{"client":"Acme Benefits","includeHistory":true,"asOf":"2026-05-20T23:59:59Z"}
+```
+
+CLI equivalent:
+
+```bash
+uv run corridor-context "Acme Benefits" --history --as-of 2026-05-20T23:59:59Z
+```
+
+Date-only inputs mean midnight UTC. `asOf` is **effective time using all evidence known now**, not
+"what the system knew on that upload date." `contextVersion` advances for persisted evidence;
+`selectionVersion` also identifies clock-driven changes to the selected facts/conflicts. History
+includes future and superseded evidence, with `isCurrent` relative to the requested effective time.
+
+Schema migration is additive and transactional. Legacy rows recover statement time only from actual
+source/meeting timestamps; unknown-time rows remain in history but are not auto-selected. Existing
+human retractions are recovered from resolution audits. Exact old source revision metadata cannot
+be recreated where it was never stored. Back up the database before migration; old pending previews
+may need regeneration because their baseline predates the timeline fields.
+
+Validation includes out-of-order arrival, late edits to old meetings, temporal corrections, bounded
+future periods, same-time disagreement, timezone offsets, missing timestamps, invalid periods,
+source revisions/removal/failure/retry, retractions, and MCP as-of reads. LLM extraction tests use
+mocked responses; schema/evidence checks do not prove live-model temporal interpretation accuracy.

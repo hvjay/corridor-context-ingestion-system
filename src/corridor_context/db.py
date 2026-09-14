@@ -120,6 +120,13 @@ def init_db(conn: sqlite3.Connection, fact_config_path: Optional[Path] = None) -
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS review_suggestions_review ON review_suggestions(review_id, id);
+        CREATE TABLE IF NOT EXISTS fact_retractions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          client_id INTEGER NOT NULL REFERENCES clients(id),
+          fact_type TEXT NOT NULL,
+          retracted_at TEXT NOT NULL,
+          resolution_id TEXT REFERENCES review_resolutions(id)
+        );
         CREATE TABLE IF NOT EXISTS correction_proposals (
           id TEXT PRIMARY KEY,
           request_id TEXT NOT NULL UNIQUE,
@@ -223,7 +230,8 @@ def init_db(conn: sqlite3.Connection, fact_config_path: Optional[Path] = None) -
           ON meeting_processing_attempts(meeting_id, attempted_at);
         """
     )
-    _migrate_existing_schema(conn)
+    with transaction(conn):
+        _migrate_existing_schema(conn)
     seed_fact_definitions(conn, fact_config_path)
 
 
@@ -241,6 +249,35 @@ def _migrate_existing_schema(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS attribution_review_key ON attribution_reviews(review_key) WHERE review_key IS NOT NULL")
     if "review_resolution_id" not in _table_columns(conn, "fact_versions"):
         conn.execute("ALTER TABLE fact_versions ADD COLUMN review_resolution_id TEXT REFERENCES review_resolutions(id)")
+    migrate_revisions = 'source_revision' not in _table_columns(conn, 'fact_versions')
+    for column in ('effective_from', 'effective_to', 'temporal_evidence', 'source_updated_at', 'source_revision'):
+        if column not in _table_columns(conn, 'fact_versions'):
+            conn.execute(f'ALTER TABLE fact_versions ADD COLUMN {column} TEXT')
+    if migrate_revisions:
+        conn.execute("UPDATE fact_versions SET source_revision=(SELECT content_hash FROM meetings WHERE meetings.id=fact_versions.source_meeting_id)")
+        conn.execute("""UPDATE fact_versions SET source_revision='legacy-superseded:' || id
+            WHERE superseded_by_fact_version_id IN
+            (SELECT newer.id FROM fact_versions newer WHERE newer.source_meeting_id=fact_versions.source_meeting_id
+             AND newer.source_start_time=fact_versions.source_start_time)""")
+    if 'statement_known' not in _table_columns(conn, 'fact_versions'):
+        conn.execute('ALTER TABLE fact_versions ADD COLUMN statement_known INTEGER NOT NULL DEFAULT 1')
+        # Legacy extraction could fall back to upload time. Do not pretend that is a meeting date.
+        for row in conn.execute('SELECT f.id,f.source_start_time,m.payload_json FROM fact_versions f JOIN meetings m ON m.id=f.source_meeting_id').fetchall():
+            payload = json.loads(row['payload_json'] or '{}')
+            statement = row['source_start_time'] or payload.get('meeting_date') or payload.get('occurred_at')
+            if statement:
+                conn.execute('UPDATE fact_versions SET observed_at=? WHERE id=?', (statement,row['id']))
+            else:
+                conn.execute('UPDATE fact_versions SET statement_known=0 WHERE id=?', (row['id'],))
+        # Preserve removals made before timeline support was installed.
+        for row in conn.execute('SELECT * FROM review_resolutions').fetchall():
+            before = json.loads(row['before_json']).get('facts', {})
+            after = json.loads(row['after_json']).get('facts', {})
+            client = conn.execute('SELECT id FROM clients WHERE client_key=?', (row['target_client_key'],)).fetchone()
+            if client:
+                for kind in before.keys() - after.keys():
+                    conn.execute('INSERT INTO fact_retractions(client_id,fact_type,retracted_at,resolution_id) VALUES (?,?,?,?)',
+                                 (client['id'],kind,row['created_at'],row['id']))
     fact_definition_columns = _table_columns(conn, "fact_definitions")
     if "current_version_id" not in fact_definition_columns:
         conn.execute("ALTER TABLE fact_definitions ADD COLUMN current_version_id INTEGER")
@@ -487,7 +524,11 @@ def apply_fact(conn: sqlite3.Connection, meeting_id: str, fact: ExtractedFact) -
 
 def _write_validated_fact(conn, meeting_id, fact, target):
     """Internal write after either attribution validation or confirmed human correction."""
+    from .timeline import instant, validate_period, reconcile
+    instant(fact.observed_at)
+    validate_period(fact.effective_from, fact.effective_to, fact.temporal_evidence, fact.source.excerpt)
     client_id = upsert_client(conn, target["name"], target["key"])
+    reconcile(conn, client_id)
     context_version = conn.execute(
         "INSERT INTO client_context_versions (client_id, source_meeting_id) VALUES (?, ?)",
         (client_id, meeting_id),
@@ -516,9 +557,6 @@ def _write_validated_fact(conn, meeting_id, fact, target):
     else:
         update_kind = fact.update_kind
 
-    if old:
-        conn.execute("UPDATE fact_versions SET is_current = 0 WHERE id = ?", (old["id"],))
-
     new_id = conn.execute(
         """
         INSERT INTO fact_versions (
@@ -526,7 +564,7 @@ def _write_validated_fact(conn, meeting_id, fact, target):
           source_excerpt, source_start_time, source_end_time, confidence, extraction_reason,
           extractor_name, extractor_version, is_current, supersedes_fact_version_id,
           update_kind, context_version, observed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
         """,
         (
             client_id,
@@ -542,13 +580,19 @@ def _write_validated_fact(conn, meeting_id, fact, target):
             fact.reason,
             fact.extractor_name,
             fact.extractor_version,
-            old["id"] if old else None,
+            None,
             update_kind,
             context_version,
             fact.observed_at,
         ),
     ).lastrowid
 
-    if old:
-        conn.execute("UPDATE fact_versions SET superseded_by_fact_version_id = ? WHERE id = ?", (new_id, old["id"]))
+    source = conn.execute('SELECT updated_at,content_hash FROM meetings WHERE id = ?', (meeting_id,)).fetchone()
+    conn.execute('UPDATE fact_versions SET effective_from=?, effective_to=?, temporal_evidence=?, source_updated_at=?, source_revision=? WHERE id=?',
+                 (fact.effective_from, fact.effective_to, fact.temporal_evidence, source['updated_at'], source['content_hash'], new_id))
+    winners = reconcile(conn, client_id)
+    winner = winners.get(fact.fact_type)
+    if old and winner and winner['id'] == new_id and old['id'] != new_id:
+        conn.execute('UPDATE fact_versions SET supersedes_fact_version_id=? WHERE id=?', (old['id'], new_id))
+        conn.execute('UPDATE fact_versions SET superseded_by_fact_version_id=? WHERE id=?', (new_id, old['id']))
     return int(new_id)

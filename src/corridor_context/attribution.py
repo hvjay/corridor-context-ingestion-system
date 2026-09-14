@@ -83,6 +83,8 @@ def validate_fact(meeting: dict, fact, decisions=None) -> None:
         if decision.get("engine") == "llm" and not any(
             c["fact_type"] == fact.fact_type and c["value"] == fact.normalized_value
             and c.get("subject_client_key") == target["key"]
+            and c.get('effective_from') == fact.effective_from and c.get('effective_to') == fact.effective_to
+            and c.get('temporal_evidence') == fact.temporal_evidence
             for c in decision.get("candidates", [])
         ):
             raise ValueError("Fact was not supported by persisted LLM attribution")

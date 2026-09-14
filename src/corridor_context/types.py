@@ -27,6 +27,9 @@ class ExtractedFact:
     observed_at: str
     extractor_name: str
     extractor_version: str
+    effective_from: Optional[str] = None
+    effective_to: Optional[str] = None
+    temporal_evidence: Optional[str] = None
 
 
 @dataclass(frozen=True)

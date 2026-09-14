@@ -14,6 +14,7 @@ from . import transcript_api
 from .db import apply_fact, connect, existing_meeting_hash, finish_ingestion_run, get_active_fact_definitions, init_db, record_meeting, record_meeting_attempt, start_ingestion_run, transaction
 from .extractors import SUPPORTED_EXTRACTORS, extract_meeting_facts
 from .env import load_local_env
+from .timeline import POLICY_VERSION as TIMELINE_VERSION, reconcile, instant
 
 
 def stable_hash(payload: object) -> str:
@@ -64,7 +65,14 @@ def ingest(
             content_hash = None
             try:
                 meeting = transcript_api.get_meeting(base_url, meeting_id)
-                content_hash = stable_hash({"meeting": meeting, "attribution_policy": POLICY_VERSION,
+                previous = conn.execute("SELECT updated_at FROM meetings WHERE id=? AND processing_status='processed'", (meeting_id,)).fetchone()
+                if previous and instant(meeting['updated_at']) < instant(previous['updated_at']):
+                    summaries['skipped'] += 1
+                    with transaction(conn):
+                        record_meeting_attempt(conn, run_id, meeting_id, None, 'skipped')
+                    _log_verbose(verbose, f'skipped {meeting_id}: older source revision')
+                    continue
+                content_hash = stable_hash({"meeting": meeting, "timeline_policy": TIMELINE_VERSION, "attribution_policy": POLICY_VERSION,
                                             "employers": employer_directory(), "extractor": extractor, "candidate_version": CANDIDATE_VERSION, "attribution": attribution,
                                             "llm_policy": LLM_POLICY_VERSION, "model": model_name(),
                                             "definitions": [asdict(d) for d in definitions]})
@@ -83,6 +91,11 @@ def ingest(
                     record_reviews(conn, run_id, meeting, target, decisions, definitions)
                     for fact in facts:
                         apply_fact(conn, meeting_id, fact)
+                    client = conn.execute('SELECT id FROM clients WHERE client_key=?', (target['key'],)).fetchone()
+                    if client:
+                        reconcile(conn, client['id'])
+                        if not facts:
+                            conn.execute('INSERT INTO client_context_versions(client_id,source_meeting_id) VALUES (?,?)', (client['id'],meeting_id))
                     record_meeting_attempt(conn, run_id, meeting_id, content_hash, "processed", len(facts))
                 summaries["review_segments"] += sum(d["status"] == "review" for d in decisions)
                 summaries["processed"] += 1
@@ -91,7 +104,7 @@ def ingest(
             except Exception as exc:  # Keep ingestion fault-tolerant per meeting.
                 summaries["failed"] += 1
                 with transaction(conn):
-                    if "meeting" in locals() and isinstance(meeting, dict) and meeting.get("id") == meeting_id and content_hash:
+                    if "meeting" in locals() and isinstance(meeting, dict) and meeting.get("id") == meeting_id and content_hash and existing_meeting_hash(conn, meeting_id) is None:
                         record_meeting(conn, meeting, content_hash, "failed", str(exc))
                     record_meeting_attempt(conn, run_id, meeting_id, content_hash, "failed", 0, str(exc))
                 _log_verbose(verbose, f"failed {meeting_id}: {exc}")

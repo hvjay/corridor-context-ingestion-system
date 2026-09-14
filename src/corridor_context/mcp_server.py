@@ -38,7 +38,7 @@ def handle(request: dict[str, Any], db_path: Path) -> dict[str, Any] | None:
             return _error(request_id, -32602, f"Unknown tool: {params.get('name')}")
         args = params.get("arguments") or {}
         try:
-            context = get_client_context(db_path, args.get("client", ""), bool(args.get("includeHistory", False)))
+            context = get_client_context(db_path, args.get("client", ""), bool(args.get("includeHistory", False)), args.get("asOf"))
         except ValueError as exc:
             return _error(request_id, -32602, str(exc))
         except KeyError as exc:
@@ -59,6 +59,7 @@ def tool_contract() -> dict[str, Any]:
             "required": ["client"],
             "properties": {
                 "client": {"type": "string", "description": "Client name or normalized key."},
+                "asOf": {"type":"string", "description":"Optional ISO date/time to query when claims apply, using all evidence currently known. Date-only means midnight UTC."},
                 "includeHistory": {"type": "boolean", "default": False},
             },
         },

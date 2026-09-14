@@ -64,7 +64,7 @@ def extract_facts(meeting: dict, definitions: Iterable[FactDefinition], decision
             continue
         text = segment.get("text", "")
         span = SourceSpan(text, segment.get("start_time"), segment.get("end_time"))
-        observed_at = segment.get("start_time") or meeting.get("updated_at") or meeting.get("created_at")
+        observed_at = segment.get("start_time") or meeting.get("meeting_date") or meeting.get("occurred_at")
         if "employee_count" in enabled:
             facts.extend(_employee_count(client_name, text, span, observed_at))
         if "benefit_cycle_start_date" in enabled:
