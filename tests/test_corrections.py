@@ -81,6 +81,7 @@ class CorrectionTests(unittest.TestCase):
         proposal=self.proposal()
         value=meeting('Acme has 30 benefits-eligible employees.')
         value['id']='new-meeting'
+        value['transcript'][0]['start_time']='2026-09-12T11:00:00Z'
         with transaction(self.conn):
             record_meeting(self.conn,value,'new','processed')
             apply_fact(self.conn,value['id'],extract_facts(value,self.definitions)[0])

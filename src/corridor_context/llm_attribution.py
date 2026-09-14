@@ -12,7 +12,7 @@ from .attribution import resolve_target, employer_directory
 from .env import load_local_env
 from .types import ExtractedFact, SourceSpan
 
-VERSION = "llm-attribution-v1"
+VERSION = "llm-attribution-v2-timeline"
 DEFAULT_MODEL = "gpt-5-mini"
 
 
@@ -29,6 +29,9 @@ def response_schema():
         "fact_type": {"type": "string"}, "value_json": {"type": "string"},
         "display_value": {"type": "string"}, "source_excerpt": {"type": "string"},
         "subject_client_key": {"type": ["string", "null"]},
+        "effective_from": {"type": ["string", "null"]},
+        "effective_to": {"type": ["string", "null"]},
+        "temporal_evidence": {"type": ["string", "null"]},
     })
     segment = _object({
         "segment_index": {"type": "integer"}, "status": {"type": "string", "enum": ["accepted", "review"]},
@@ -53,6 +56,14 @@ do not provide hidden chain-of-thought. Do not infer an employer merely from the
 Extract all explicitly stated values for configured fact types, including values in held passages;
 these are only review candidates. Use exact source excerpts from that candidate's own segment.
 Use configured schemas for normalized JSON values. Preserve multiple values in comparisons.
+Distinguish statement time from the period the claim applies to. Record effective_from and
+an optional exclusive effective_to as ISO dates/timestamps ONLY when explicitly supported.
+Copy supporting temporal_evidence exactly from source_excerpt. Resolve relative dates only when
+unambiguous given the statement timestamp. Otherwise mark the passage review and leave dates null.
+A date-valued fact (e.g. benefit cycle starts Jan 1) is known when stated: that value alone does NOT
+make effective_from Jan 1. "Starting January 1 our budget will be $600" does have that effective date.
+Use null for all temporal fields when no effective period is specified. Never use upload/updated_at
+as the statement time or as evidence that a claim supersedes a more recent meeting.
 For known subjects use a configured employer key; use null for unknown/ambiguous subjects.
 If no configured fact can be extracted, return an empty candidates list and retain the passage decision.
 For an accepted segment all candidate subjects must equal the target key. Never guess missing facts.
@@ -161,9 +172,13 @@ def validate_analysis(meeting, definitions, result):
             validate_value(value, definition.value_schema)
             if not isinstance(item.get("display_value"), str) or not item["display_value"].strip():
                 raise ValueError("Candidate display value missing")
+            from .timeline import validate_period
+            validate_period(item.get('effective_from'), item.get('effective_to'), item.get('temporal_evidence'), quote)
             candidates.append({"fact_type": definition.fact_type, "label": definition.display_name,
                                "value": value, "display_value": item["display_value"], "excerpt": quote,
-                               "subject_client_key": candidate_subject})
+                               "subject_client_key": candidate_subject,
+                               "effective_from": item.get('effective_from'), "effective_to": item.get('effective_to'),
+                               "temporal_evidence": item.get('temporal_evidence')})
         validated.append({"segment_index": index, "status": status, "subject_client_key": subject,
                           "reason": reason, "evidence_segment_indexes": evidence, "candidates": candidates,
                           "excerpt": segments[index].get("text", ""), "engine": "llm", "model": model_name(), "version": VERSION})
@@ -191,7 +206,9 @@ def facts_from_analysis(meeting, decisions):
                 client_name=target["name"], fact_type=candidate["fact_type"], normalized_value=candidate["value"],
                 display_value=candidate["display_value"], source=SourceSpan(candidate["excerpt"], segment.get("start_time"), segment.get("end_time")),
                 confidence=0.8, reason=decision["reason"], update_kind="update",
-                observed_at=segment.get("start_time") or meeting.get("updated_at") or meeting.get("created_at"),
+                observed_at=segment.get("start_time") or meeting.get("meeting_date") or meeting.get("occurred_at"),
+                effective_from=candidate.get('effective_from'), effective_to=candidate.get('effective_to'),
+                temporal_evidence=candidate.get('temporal_evidence'),
                 extractor_name="openai_attribution", extractor_version=decision["version"] + ":" + decision["model"],
             ))
     return facts

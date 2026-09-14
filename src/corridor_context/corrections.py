@@ -42,10 +42,15 @@ def _resolution(conn, review_id):
 
 
 def _state(conn, key):
-    rows = conn.execute('''SELECT f.* FROM fact_versions f JOIN clients c ON c.id = f.client_id
-        WHERE c.client_key = ? AND f.is_current = 1 ORDER BY f.fact_type''', (key,)).fetchall()
+    from .timeline import select_facts
+    client = conn.execute('SELECT id FROM clients WHERE client_key = ?', (key,)).fetchone()
+    selected, conflicts = select_facts(conn, client['id']) if client else ({}, {})
+    rows = list(selected.values())
+    timeline_version = conn.execute('SELECT COALESCE(MAX(id),0) FROM client_context_versions WHERE client_id=?',(client['id'],)).fetchone()[0] if client else 0
     definitions = conn.execute('SELECT * FROM fact_definitions WHERE active = 1 ORDER BY fact_type').fetchall()
-    return {'facts': {row['fact_type']: {'version_id': row['id'], 'value': json.loads(row['normalized_value_json']),
+    return {'timeline_version': timeline_version,
+            'conflicts': {kind:[{'value':json.loads(row['normalized_value_json']), 'statement_at':row['observed_at'], 'effective_from':row['effective_from']} for row in group] for kind,group in conflicts.items()},
+            'facts': {row['fact_type']: {'version_id': row['id'], 'value': json.loads(row['normalized_value_json']),
                                       'display_value': row['display_value']} for row in rows},
             'definitions': {row['fact_type']: {'version_id': row['current_version_id'], 'label': row['display_name'],
                                              'schema': json.loads(row['value_schema_json'])} for row in definitions}}
@@ -57,7 +62,9 @@ def _plan_schema():
                     'changes': {'type':'array','items':_object({
                         'fact_type': {'type':'string'}, 'operation': {'type':'string','enum':['set','remove']},
                         'value_json': {'type':'string'}, 'display_value': {'type':'string'},
-                        'instruction_excerpt': {'type':'string'}})}})
+                        'instruction_excerpt': {'type':'string'},
+                        'effective_from': {'type':['string','null']}, 'effective_to': {'type':['string','null']},
+                        'temporal_evidence': {'type':['string','null']}})}})
 
 
 def _request_plan(context, *, prompt=None, schema=None):
@@ -74,6 +81,10 @@ Make only changes explicitly requested or clearly confirmed by the reviewer. Nev
 Each change needs an exact supporting instruction_excerpt from reviewer_instruction.
 If the instruction is ambiguous, outside supported fact types, or incomplete, return clarify with a concise question and no changes.
 If the reviewer says ignore/dismiss/resolve without changing facts, return ignore with no changes.
+For set, when the reviewer explicitly specifies an effective date/period, return effective_from
+and optional exclusive effective_to as ISO dates, plus an exact temporal_evidence quote from reviewer_instruction.
+Otherwise return null for those fields. Do not confuse a date-valued fact with when it applies.
+For remove, dated removals are unsupported: ask for clarification; normal removal applies now and has null temporal fields.
 For remove use value_json "null". For set, encode the normalized value in value_json.
 Give a concise summary suitable for the human preview. Do not provide hidden chain-of-thought.
 Return update only with one or more changes. Return an empty question unless clarification is required.'''
@@ -121,7 +132,11 @@ def _validate_plan(result, instruction, state):
         quote = change.get('instruction_excerpt')
         if not isinstance(quote, str) or not quote.strip() or quote not in instruction:
             raise ValueError('Correction is not grounded in the reviewer instruction')
+        from .timeline import validate_period
+        validate_period(change.get('effective_from'),change.get('effective_to'),change.get('temporal_evidence'),instruction)
         operation = change.get('operation')
+        if operation == 'remove' and change.get('effective_from'):
+            raise ValueError('Dated retractions require clarification')
         value = json.loads(change['value_json'])
         if operation == 'set':
             validate_value(value, definition['schema'])
@@ -132,7 +147,9 @@ def _validate_plan(result, instruction, state):
             raise ValueError('Invalid removal or correction operation')
         validated.append({'fact_type':fact_type, 'label':definition['label'], 'operation':operation,
                           'value':value, 'display_value':display, 'instruction_excerpt':quote,
-                          'before':state['facts'].get(fact_type)})
+                          'before':state['facts'].get(fact_type),
+                          'effective_from':change.get('effective_from'), 'effective_to':change.get('effective_to'),
+                          'temporal_evidence':change.get('temporal_evidence')})
     return {'action':action,'summary':summary,'question':question,'changes':validated}
 
 
@@ -242,12 +259,14 @@ def apply_proposal(conn, key, review_id, proposal_id):
                     old_id = before['facts'][change['fact_type']]['version_id']
                     conn.execute('UPDATE fact_versions SET is_current = 0 WHERE id = ?', (old_id,))
                     client_id = conn.execute('SELECT client_id FROM fact_versions WHERE id = ?', (old_id,)).fetchone()[0]
+                    conn.execute('INSERT INTO fact_retractions(client_id,fact_type,retracted_at,resolution_id) VALUES (?,?,?,?)', (client_id,change['fact_type'],now,resolution_id))
                     conn.execute('INSERT INTO client_context_versions(client_id,source_meeting_id) VALUES (?,?)',(client_id,source_id))
                 else:
                     validate_value(change['value'],before['definitions'][change['fact_type']]['schema'])
                     fact = ExtractedFact(target['name'],change['fact_type'],change['value'],change['display_value'],
                                          SourceSpan(proposal['instruction'],now,now),1.0,
-                                         'Human-confirmed correction: '+plan['summary'],'correction',now,'human_review','v1')
+                                         'Human-confirmed correction: '+plan['summary'],'correction',now,'human_review','v1',
+                                         change.get('effective_from'),change.get('effective_to'),change.get('temporal_evidence'))
                     fact_id = _write_validated_fact(conn,source_id,fact,target)
                     conn.execute('UPDATE fact_versions SET review_resolution_id = ? WHERE id = ?', (resolution_id,fact_id))
         conn.execute('UPDATE review_resolutions SET after_json = ? WHERE id = ?', (json.dumps(_state(conn,key)),resolution_id))

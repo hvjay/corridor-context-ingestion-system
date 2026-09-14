@@ -12,9 +12,10 @@ def main() -> None:
     parser.add_argument("client")
     parser.add_argument("--db", type=Path, default=Path("data/client_context.sqlite3"))
     parser.add_argument("--history", action="store_true")
+    parser.add_argument("--as-of", help="ISO date/time for an effective-time query")
     args = parser.parse_args()
     try:
-        print(json.dumps(get_client_context(args.db, args.client, args.history), indent=2, sort_keys=True))
+        print(json.dumps(get_client_context(args.db, args.client, args.history, args.as_of), indent=2, sort_keys=True))
     except (KeyError, ValueError) as exc:
         raise SystemExit(str(exc))
 
